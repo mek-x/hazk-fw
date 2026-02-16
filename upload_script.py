@@ -6,7 +6,7 @@ Import("env")
 
 def on_upload(source, target, env):
     firmware_path = str(source[0])
-    upload_url = env.GetProjectOption("upload_url")
+    upload_url = env.GetProjectOption("upload_port")
 
     print(f"\nUploading {firmware_path} to {upload_url} ...")
 

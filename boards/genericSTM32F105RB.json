@@ -1,0 +1,28 @@
+{
+  "build": {
+    "core": "stm32",
+    "cpu": "cortex-m3",
+    "extra_flags": "-DSTM32F105xC -DSTM32F1xx",
+    "f_cpu": "72000000L",
+    "mcu": "stm32f105rbt6",
+    "product_line": "STM32F105xC",
+    "variant": "STM32F1xx/F105R(8-B-C)T"
+  },
+  "debug": {
+    "jlink_device": "STM32F105RB",
+    "openocd_target": "stm32f1x",
+    "svd_path": "STM32F105xx.svd"
+  },
+  "frameworks": [
+    "arduino",
+    "stm32cube"
+  ],
+  "name": "Generic STM32F105RB",
+  "upload": {
+    "maximum_ram_size": 65536,
+    "maximum_size": 131072,
+    "protocol": "serial"
+  },
+  "url": "https://www.st.com/en/microcontrollers-microprocessors/stm32f105rb.html",
+  "vendor": "Generic"
+}

@@ -71,57 +71,46 @@ void setup() {
 }
 
 void loop() {
-  Serial1.println("Testing MAIN Screen (PA13)...");
-  tm_setDigitChar(0, '1');
+  Serial1.println("\n--- PHASE 1: Sea of 0s, walking a 1 ---");
+  Serial1.println("Watch for lines (horizontal or vertical) or moving dots.");
+  tm_setDigitChar(0, 1);
   tm_updateDisplay();
 
-  // Let's assume a maximum of 4 daisy-chained chips (4 * 16 = 64 bits)
-  // We will push a single "1" through all 64 positions.
-  for (int i = 0; i < 64; i++) {
-    // 1. Clear the entire chain with zeros
-    for (int j = 0; j < 64; j++) shiftBit(DIN_MAIN, 0);
-
-    // 2. Push our single active bit 'i' spots in
-    shiftBit(DIN_MAIN, 1);
-    for (int j = 0; j < i; j++) shiftBit(DIN_MAIN, 0);
-
-    // 3. Latch and show
+  for (int i = 0; i < 96; i++) {
+    // Push 96 bits. If index matches 'i', push a 1. Otherwise push a 0.
+    for (int j = 95; j >= 0; j--) {
+      shiftBit(DIN_MAIN, (j == i) ? 1 : 0);
+    }
     latchData();
 
-    Serial1.print("Main Bit Position: "); Serial1.println(i);
-    tm_setDigitChar(4, i/10 + '0');
-    tm_setDigitChar(5, i%10 + '0');
+    Serial1.print("Walking 1 at Bit: "); Serial1.println(i);
+    tm_setDigitChar(4, i/10);
+    tm_setDigitChar(5, i%10);
     tm_updateDisplay();
-    delay(200);
+    delay(250);
   }
 
-  // Clear Main Screen
-  for (int j = 0; j < 64; j++) shiftBit(DIN_MAIN, 0);
+  // Clear screen
+  for (int j = 0; j < 96; j++) shiftBit(DIN_MAIN, 0);
   latchData();
+  delay(1000);
 
-  Serial1.println("Testing SUB Screen (PB15)...");
-  tm_setDigitChar(0, '2');
+  Serial1.println("\n--- PHASE 2: Sea of 1s, walking a 0 ---");
+  Serial1.println("Watch for lines (horizontal or vertical) or moving empty gaps.");
+  tm_setDigitChar(0, 2);
   tm_updateDisplay();
 
-  for (int i = 0; i < 32; i++) { // Assuming sub screen is smaller
-    for (int j = 0; j < 32; j++) shiftBit(DIN_SUB, 0);
-
-    shiftBit(DIN_SUB, 1);
-    for (int j = 0; j < i; j++) shiftBit(DIN_SUB, 0);
-
+  for (int i = 0; i < 96; i++) {
+    // Push 96 bits. If index matches 'i', push a 0. Otherwise push a 1.
+    for (int j = 95; j >= 0; j--) {
+      shiftBit(DIN_MAIN, (j == i) ? 0 : 1);
+    }
     latchData();
 
-    Serial1.print("Sub Bit Position: "); Serial1.println(i);
-    tm_setDigitChar(4, i/10 + '0');
-    tm_setDigitChar(5, i%10 + '0');
+    Serial1.print("Walking 0 at Bit: "); Serial1.println(i);
+    tm_setDigitChar(4, i/10);
+    tm_setDigitChar(5, i%10);
     tm_updateDisplay();
-    delay(200);
+    delay(250);
   }
-
-  // Clear Sub Screen
-  for (int j = 0; j < 32; j++) shiftBit(DIN_SUB, 0);
-  latchData();
-
-  delay(2000);
-
 }

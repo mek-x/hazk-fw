@@ -60,17 +60,20 @@ void setup() {
 }
 
 void loop() {
-    for (int x = 0; x < 80; x++) {
+    tm_setDigitChar(0, '1');
+    tm_updateDisplay();
+
+    for (int y = 0; y < 16; y++) {
         mainScreen.clear();
         subScreen.clear();
 
-        // Display the current column number on the TM1629A
-        tm_setDigitChar(2, '0' + (x / 10));
-        tm_setDigitChar(3, '0' + (x % 10));
+        // Display the current row number on the TM1629A
+        tm_setDigitChar(2, '0' + (y / 10));
+        tm_setDigitChar(3, '0' + (y % 10));
         tm_updateDisplay();
 
-        // Draw a vertical line at this bit
-        for (int y = 0; y < 14; y++) {
+        // Draw a horizontal line at this row
+        for (int x = 0; x < 70; x++) {
             mainScreen.drawPixel(x, y, 1);
             subScreen.drawPixel(x, y, 1);
         }

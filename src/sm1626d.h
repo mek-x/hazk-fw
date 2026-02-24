@@ -15,7 +15,7 @@ class MatrixDriver {
 
     // We allocate enough memory for the big screen (70x14)
     // 70 columns / 8 = 9 bytes per row. 14 rows total.
-    uint8_t _framebuffer[14][10]; // 80 bits per row for safety
+    uint8_t _framebuffer[16][10]; // 80 bits per row for safety
 
     // The Hardware Translation Layer
     int mapX(int x);

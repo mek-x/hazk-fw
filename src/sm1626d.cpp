@@ -35,18 +35,25 @@ void MatrixDriver::clear() {
 // --- THE HARDWARE TRANSLATION LAYER ---
 
 int MatrixDriver::mapY(int y) {
-    y = y + 2; // Shift down by 2 rows
-
-    return y % 14;
+    return y+2; // The first two rows are reserved for the sub-screen, so we offset all Y coordinates by 2
 }
 
 int MatrixDriver::mapX(int x) {
-    // We will update this formula once we run the Block Calibration!
-    return x;
+    // Determine which of the 5 shift registers this pixel belongs to (0 to 4)
+    int chipNumber = x / 16;
+
+    // Determine its physical position within that 16-pixel block (0 to 15)
+    int localOffset = x % 16;
+
+    // Reverse the wiring! (15 becomes 0, 0 becomes 15)
+    int reversedOffset = 15 - localOffset;
+
+    // Calculate the absolute bit index
+    return (chipNumber * 16) + reversedOffset;
 }
 
 void MatrixDriver::drawPixel(int x, int y, bool color) {
-    if (x < 0 || x >= 80 || y < 0 || y >= _height) return;
+    if (x < 0 || x >= _width+8 || y < 0 || y >= _height) return;
 
     // Convert logical coordinates to physical hardware bits
     int phys_x = mapX(x);
@@ -73,7 +80,7 @@ void MatrixDriver::latchData() {
 
 // The Multiplexing Loop (Call this repeatedly)
 void MatrixDriver::refreshFrame() {
-    for (int row = 0; row < 14; row++) {
+    for (int row = 0; row < 16; row++) {
         int colBits = (_width > 32) ? 80 : 32;
 
         for (int col = colBits - 1; col >= 0; col--) {

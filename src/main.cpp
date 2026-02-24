@@ -56,27 +56,29 @@ void setup() {
     mainScreen.begin();
     subScreen.begin();
 
-    // Draw Block 0 (Bits 0-15) on Row 0
-    for (int x = 0; x < 16; x++) mainScreen.drawPixel(x, 0, 1);
-    for (int x = 0; x < 16; x++) subScreen.drawPixel(x, 0, 1);
-
-    // Draw Block 1 (Bits 16-31) on Row 2
-    for (int x = 16; x < 32; x++) mainScreen.drawPixel(x, 2, 1);
-
-    // Draw Block 2 (Bits 32-47) on Row 4
-    for (int x = 32; x < 48; x++) mainScreen.drawPixel(x, 4, 1);
-    for (int x = 32; x < 48; x++) subScreen.drawPixel(x, 4, 1);
-
-    // Draw Block 3 (Bits 48-63) on Row 6
-    for (int x = 48; x < 64; x++) mainScreen.drawPixel(x, 6, 1);
-
-    // Draw Block 4 (Bits 64-79) on Row 8
-    for (int x = 64; x < 80; x++) mainScreen.drawPixel(x, 8, 1);
-
     Serial1.println("Setup complete.");
 }
 
 void loop() {
-    mainScreen.refreshFrame();
-    subScreen.refreshFrame();
+    for (int x = 0; x < 80; x++) {
+        mainScreen.clear();
+        subScreen.clear();
+
+        // Display the current column number on the TM1629A
+        tm_setDigitChar(2, '0' + (x / 10));
+        tm_setDigitChar(3, '0' + (x % 10));
+        tm_updateDisplay();
+
+        // Draw a vertical line at this bit
+        for (int y = 0; y < 14; y++) {
+            mainScreen.drawPixel(x, y, 1);
+            subScreen.drawPixel(x, y, 1);
+        }
+
+        // Hold it there so we can see it
+        for(int t=0; t<20; t++) {
+            mainScreen.refreshFrame();
+            subScreen.refreshFrame();
+        }
+    }
 }

@@ -46,7 +46,7 @@ int MatrixDriver::mapX(int x) {
 }
 
 void MatrixDriver::drawPixel(int x, int y, bool color) {
-    if (x < 0 || x >= _width || y < 0 || y >= _height) return;
+    if (x < 0 || x >= 80 || y < 0 || y >= _height) return;
 
     // Convert logical coordinates to physical hardware bits
     int phys_x = mapX(x);
@@ -74,7 +74,6 @@ void MatrixDriver::latchData() {
 // The Multiplexing Loop (Call this repeatedly)
 void MatrixDriver::refreshFrame() {
     for (int row = 0; row < 14; row++) {
-        // Shift Columns (Maximum 80 bits for big screen, 32 for small)
         int colBits = (_width > 32) ? 80 : 32;
 
         for (int col = colBits - 1; col >= 0; col--) {

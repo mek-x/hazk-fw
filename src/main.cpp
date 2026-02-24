@@ -2,6 +2,41 @@
 #include "tm1629a.h"
 #include "sm1626d.h"
 
+// 21x14 Heart Bitmap
+// 1 = ON, 0 = OFF. Bit 0 is far left (x=0), Bit 20 is far right (x=20).
+const uint32_t heart_21x14[14] = {
+  0x000000, // Row 0:  .....................
+  0x01E0F0, // Row 1:  ....XXXX.....XXXX....
+  0x03F1F8, // Row 2:  ...XXXXXX...XXXXXX...
+  0x07FBFC, // Row 3:  ..XXXXXXXX.XXXXXXXX..
+  0x07FFFC, // Row 4:  ..XXXXXXXXXXXXXXXXX..
+  0x07FFFC, // Row 5:  ..XXXXXXXXXXXXXXXXX..
+  0x03FFF8, // Row 6:  ...XXXXXXXXXXXXXXX...
+  0x01FFF0, // Row 7:  ....XXXXXXXXXXXXX....
+  0x00FFE0, // Row 8:  .....XXXXXXXXXXX.....
+  0x007FC0, // Row 9:  ......XXXXXXXXX......
+  0x003F80, // Row 10: .......XXXXXXX.......
+  0x001F00, // Row 11: ........XXXXX........
+  0x000E00, // Row 12: .........XXX.........
+  0x000400  // Row 13: ..........X..........
+};
+
+const char* text[14] = {
+  "                                                                      ",
+  "                                                                      ",
+  "                                                                      ",
+  " ###########                      ###                                 ",
+  "     ###                          ###    ##                           ",
+  "     ###        ###      #####  #######     ### ###    #####          ",
+  "     ###      ##   ###  ###       ###   ###  ###  ### ###  ###        ",
+  "     ###     #########    ####    ###   ###  ###  ### ##   ###        ",
+  "     ###     ##             ###   ### # ###  ###  ### #### ###        ",
+  "     ###       #####    ######     ###  ### ####  ###     ###  ##  ## ",
+  "                                                        ####          ",
+  "                                                                      ",
+  "                                                                      ",
+  "                                                                      ",
+};
 
 // --- TM1629A Pin Definitions ---
 #define TM_DIO_PIN PB4 // Data I/O
@@ -21,28 +56,35 @@ MatrixDriver subScreen(CLK_PIN, OE_PIN, STB_PIN, DIN_SUB, 21, 14);
 // Map Serial1 to PA9/PA10 explicitly
 HardwareSerial Serial1(PA10, PA9);
 
-// --- Shift Register Logic ---
+void drawHeartToSubScreen() {
+  subScreen.clear();
 
-// Disables JTAG/SWD to reclaim PA13 and PA14 as standard GPIO
-void reclaimDebugPins() {
-  // Enable AFIO clock
-  RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
-  // Disable JTAG and SWD entirely (AFIO_MAPR_SWJ_CFG_DISABLE = 0x04000000)
-  AFIO->MAPR = (AFIO->MAPR & ~AFIO_MAPR_SWJ_CFG) | 0x04000000;
+  // Loop through all 14 rows
+  for (int y = 0; y < 14; y++) {
+    // Loop through the 21 columns
+    for (int x = 0; x < 21; x++) {
+
+      // If the specific bit at position 'x' is a 1, draw the pixel
+      if (heart_21x14[y] & (1UL << x)) {
+        subScreen.drawPixel(x, y, 1);
+      }
+    }
+  }
 }
 
-// Pushes a single bit into the specified DIN pin
-void shiftBit(uint8_t dataPin, uint8_t bitVal) {
-  digitalWrite(CLK_PIN, LOW);
-  digitalWrite(dataPin, bitVal ? HIGH : LOW);
-  digitalWrite(CLK_PIN, HIGH);
-}
+void drawToMainScreen() {
+  mainScreen.clear();
 
-// Latches the shifted data to the outputs
-void latchData() {
-  digitalWrite(STB_PIN, HIGH);
-  delayMicroseconds(1); // Short pulse
-  digitalWrite(STB_PIN, LOW);
+  for (int y = 0; y < 14; y++) {
+    for (int x = 0; x < 70; x++) {
+
+      // If the character is NOT a space, turn the LED ON
+      if (text[y][x] != ' ') {
+        mainScreen.drawPixel(x, y, 1);
+      }
+
+    }
+  }
 }
 
 void setup() {
@@ -56,32 +98,26 @@ void setup() {
     mainScreen.begin();
     subScreen.begin();
 
+    drawHeartToSubScreen();
+    drawToMainScreen();
+
+    for (int i = 1; i <= 6; i++) {
+      tm_setDigitChar(i-1, '0' + (i % 10));
+    }
+    tm_setDigitChar(6, '1');
+    tm_setDigitChar(7, 'a');
+    tm_setDigitChar(8, '2');
+    tm_setDigitChar(9, 'b');
+    tm_setDigitChar(10, 'e');
+    tm_setDigitChar(11, 'f');
+
+    tm_updateDisplay(); // Flush the changes from tm_setDigitChar to the actual display
+
     Serial1.println("Setup complete.");
 }
 
 void loop() {
-    tm_setDigitChar(0, '1');
-    tm_updateDisplay();
-
-    for (int y = 0; y < 16; y++) {
-        mainScreen.clear();
-        subScreen.clear();
-
-        // Display the current row number on the TM1629A
-        tm_setDigitChar(2, '0' + (y / 10));
-        tm_setDigitChar(3, '0' + (y % 10));
-        tm_updateDisplay();
-
-        // Draw a horizontal line at this row
-        for (int x = 0; x < 70; x++) {
-            mainScreen.drawPixel(x, y, 1);
-            subScreen.drawPixel(x, y, 1);
-        }
-
-        // Hold it there so we can see it
-        for(int t=0; t<20; t++) {
-            mainScreen.refreshFrame();
-            subScreen.refreshFrame();
-        }
-    }
+    mainScreen.refreshFrame();
+    subScreen.refreshFrame();
 }
+

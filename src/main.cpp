@@ -60,24 +60,51 @@ void setup() {
 }
 
 void loop() {
-  // Test 1: Turn ON every segment/LED connected to the TM1629A
-  Serial1.println("Pattern: ALL ON");
-  uint8_t all_on[16];
-  memset(all_on, 0xFF, 16); // Fill array with 11111111
-  tm_writeData(all_on, 16);
-  delay(2000);
+  // --- TEST 1: The Digit Scanner ---
+  // We will keep one physical segment ON, and sweep across the 16 possible digits
+  Serial1.println("\n--- Starting DIGIT Scan ---");
+  Serial1.println("You should see ONE segment move across the digits from left to right.");
 
-  // Test 2: Turn OFF everything
-  Serial1.println("Pattern: ALL OFF");
+  for (int digitBit = 0; digitBit < 16; digitBit++) {
+    uint8_t memory[16] = {0};
+
+    // We use Address 0 (which controls the first 8 bits of Grid 1)
+    // and Address 1 (which controls the next 8 bits of Grid 1)
+    if (digitBit < 8) {
+      memory[0] = (1 << (digitBit));
+    } else {
+      memory[1] = (1 << (digitBit - 8));
+    }
+
+    tm_writeData(memory, 16);
+
+    Serial1.print("Digit Bit: "); Serial1.println(digitBit);
+    delay(1000); // Wait 1 second so you can map it
+  }
+
   tm_clearDisplay();
   delay(1000);
 
-  // Test 3: Sweeping pattern (lights up one grid at a time)
-  Serial1.println("Pattern: SWEEP");
-  for (int i = 0; i < 16; i++) {
-    uint8_t sweep[16] = {0};
-    sweep[i] = 0xFF;
-    tm_writeData(sweep, 16);
-    delay(200);
+  // --- TEST 2: The Segment Scanner ---
+  // We will keep ONE digit ON, and sweep through the 8 possible segments
+  Serial1.println("\n--- Starting SEGMENT Scan ---");
+  Serial1.println("You should see different segments light up on a SINGLE digit.");
+
+  for (int gridByte = 0; gridByte < 8; gridByte++) {
+    uint8_t memory[16] = {0};
+
+    // TM1629A Grids are located at even memory addresses (0, 2, 4, 6, 8, 10, 12, 14)
+    int address = gridByte * 2;
+
+    // Turn on Bit 0 (which should correspond to Digit 1 from our previous test)
+    memory[address] = 0x02;
+
+    tm_writeData(memory, 16);
+
+    Serial1.print("Segment/Grid Address: 0x"); Serial1.println(address, HEX);
+    delay(1000);
   }
+
+  tm_clearDisplay();
+  delay(2000);
 }

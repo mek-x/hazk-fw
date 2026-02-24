@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "tm1629a.h"
+#include "sm1626d.h"
 
 
 // --- TM1629A Pin Definitions ---
@@ -13,6 +14,9 @@
 #define STB_PIN   PB14 // Strobe / Latch
 #define DIN_MAIN  PB15 // Main Screen Data In
 #define DIN_SUB   PA13 // Small Screen Data In
+
+MatrixDriver mainScreen(CLK_PIN, OE_PIN, STB_PIN, DIN_MAIN, 70, 14);
+MatrixDriver subScreen(CLK_PIN, OE_PIN, STB_PIN, DIN_SUB, 21, 14);
 
 // Map Serial1 to PA9/PA10 explicitly
 HardwareSerial Serial1(PA10, PA9);
@@ -42,75 +46,37 @@ void latchData() {
 }
 
 void setup() {
-  Serial1.begin(115200);
-  delay(1000);
-  Serial1.println("\n=== TM1629A INIT ===");
-  tm_setup(8, {TM_STB_PIN, TM_CLK_PIN, TM_DIO_PIN}); // Brightness 8/15
+    Serial1.begin(115200);
+    delay(1000);
+    Serial1.println("\n=== TM1629A INIT ===");
+    tm_setup(1, {TM_STB_PIN, TM_CLK_PIN, TM_DIO_PIN});
 
-  Serial1.println("\n=== SM1626D SHIFT REGISTER SCANNER ===");
+    Serial1.println("\n=== Screens INIT ===");
+    // Initialize the display hardware
+    mainScreen.begin();
+    subScreen.begin();
 
-  reclaimDebugPins(); // CRITICAL for PA13
+    // Draw Block 0 (Bits 0-15) on Row 0
+    for (int x = 0; x < 16; x++) mainScreen.drawPixel(x, 0, 1);
+    for (int x = 0; x < 16; x++) subScreen.drawPixel(x, 0, 1);
 
-  pinMode(CLK_PIN, OUTPUT);
-  pinMode(STB_PIN, OUTPUT);
-  pinMode(OE_PIN, OUTPUT);
-  pinMode(DIN_MAIN, OUTPUT);
-  pinMode(DIN_SUB, OUTPUT);
+    // Draw Block 1 (Bits 16-31) on Row 2
+    for (int x = 16; x < 32; x++) mainScreen.drawPixel(x, 2, 1);
 
-  // Default states
-  digitalWrite(CLK_PIN, LOW);
-  digitalWrite(STB_PIN, LOW);
-  digitalWrite(DIN_MAIN, LOW);
-  digitalWrite(DIN_SUB, LOW);
+    // Draw Block 2 (Bits 32-47) on Row 4
+    for (int x = 32; x < 48; x++) mainScreen.drawPixel(x, 4, 1);
+    for (int x = 32; x < 48; x++) subScreen.drawPixel(x, 4, 1);
 
-  // OE is almost always Active LOW on LED drivers.
-  // We pull it LOW to turn the displays ON.
-  digitalWrite(OE_PIN, LOW);
+    // Draw Block 3 (Bits 48-63) on Row 6
+    for (int x = 48; x < 64; x++) mainScreen.drawPixel(x, 6, 1);
 
-  Serial1.println("Setup complete.");
+    // Draw Block 4 (Bits 64-79) on Row 8
+    for (int x = 64; x < 80; x++) mainScreen.drawPixel(x, 8, 1);
+
+    Serial1.println("Setup complete.");
 }
 
 void loop() {
-  Serial1.println("\n--- PHASE 1: Sea of 0s, walking a 1 ---");
-  Serial1.println("Watch for lines (horizontal or vertical) or moving dots.");
-  tm_setDigitChar(0, 1);
-  tm_updateDisplay();
-
-  for (int i = 0; i < 96; i++) {
-    // Push 96 bits. If index matches 'i', push a 1. Otherwise push a 0.
-    for (int j = 95; j >= 0; j--) {
-      shiftBit(DIN_MAIN, (j == i) ? 1 : 0);
-    }
-    latchData();
-
-    Serial1.print("Walking 1 at Bit: "); Serial1.println(i);
-    tm_setDigitChar(4, i/10);
-    tm_setDigitChar(5, i%10);
-    tm_updateDisplay();
-    delay(250);
-  }
-
-  // Clear screen
-  for (int j = 0; j < 96; j++) shiftBit(DIN_MAIN, 0);
-  latchData();
-  delay(1000);
-
-  Serial1.println("\n--- PHASE 2: Sea of 1s, walking a 0 ---");
-  Serial1.println("Watch for lines (horizontal or vertical) or moving empty gaps.");
-  tm_setDigitChar(0, 2);
-  tm_updateDisplay();
-
-  for (int i = 0; i < 96; i++) {
-    // Push 96 bits. If index matches 'i', push a 0. Otherwise push a 1.
-    for (int j = 95; j >= 0; j--) {
-      shiftBit(DIN_MAIN, (j == i) ? 0 : 1);
-    }
-    latchData();
-
-    Serial1.print("Walking 0 at Bit: "); Serial1.println(i);
-    tm_setDigitChar(4, i/10);
-    tm_setDigitChar(5, i%10);
-    tm_updateDisplay();
-    delay(250);
-  }
+    mainScreen.refreshFrame();
+    subScreen.refreshFrame();
 }

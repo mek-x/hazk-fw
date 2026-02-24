@@ -21,7 +21,7 @@ void setup() {
 }
 
 void loop() {
-  for (int i = 0; i < 7; i++) {
+  for (int i = 0; i < 8; i++) {
 
   Serial1.printf("Brightness: %d\n", i);
   tm_setBrightness(i); // Cycle through brightness levels
@@ -39,8 +39,8 @@ void loop() {
   tm_setDigitChar(7, '0');
   tm_setDigitChar(8, ' ');
   tm_setDigitRaw(9, 1<<6);
-  tm_setDigitChar(10, i / 10 + '0');
-  tm_setDigitChar(11, i % 10 + '0');
+  tm_setDigitChar(10, i);
+  tm_setDigitChar(11, i+9);
   tm_updateDisplay();
   delay(2000);
 

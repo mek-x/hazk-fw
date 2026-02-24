@@ -21,6 +21,12 @@ const uint8_t font7seg[] = {
     0x07, // 7
     0x7F, // 8
     0x6F, // 9
+    0x77, // A
+    0x7F, // B
+    0x39, // C
+    0x3F, // D
+    0x79, // E
+    0x71, // F
     0x00  // Space (10)
 };
 
@@ -110,7 +116,10 @@ void tm_setDigitRaw(uint8_t digitIdx, uint8_t segData) {
 void tm_setDigitChar(uint8_t digitIdx, char c) {
   uint8_t fontData = 0x00;
   if (c >= '0' && c <= '9') fontData = font7seg[c - '0'];
-  else if (c == ' ') fontData = font7seg[10];
+  else if (c == ' ') fontData = font7seg[0x10];
+  else if ((c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')) fontData = font7seg[10 + (c >= 'a' ? c - 'a' : c - 'A')];
+  else if (c < sizeof(font7seg)) fontData = font7seg[c];
+  else return; // Unsupported character
 
   tm_setDigitRaw(digitIdx, fontData);
 }

@@ -1,113 +1,145 @@
 #include <Arduino.h>
+#include "tm1629a.h"
+#include "sm1626d.h"
+#include "ds3321.h"
 
-#define SCL_PIN PC6
-#define SDA_PIN PC7
+// 21x14 Heart Bitmap
+// 1 = ON, 0 = OFF. Bit 0 is far left (x=0), Bit 20 is far right (x=20).
+const uint32_t heart_21x14[14] = {
+  0x000000, // Row 0:  .....................
+  0x01E0F0, // Row 1:  ....XXXX.....XXXX....
+  0x03F1F8, // Row 2:  ...XXXXXX...XXXXXX...
+  0x07FBFC, // Row 3:  ..XXXXXXXX.XXXXXXXX..
+  0x07FFFC, // Row 4:  ..XXXXXXXXXXXXXXXXX..
+  0x07FFFC, // Row 5:  ..XXXXXXXXXXXXXXXXX..
+  0x03FFF8, // Row 6:  ...XXXXXXXXXXXXXXX...
+  0x01FFF0, // Row 7:  ....XXXXXXXXXXXXX....
+  0x00FFE0, // Row 8:  .....XXXXXXXXXXX.....
+  0x007FC0, // Row 9:  ......XXXXXXXXX......
+  0x003F80, // Row 10: .......XXXXXXX.......
+  0x001F00, // Row 11: ........XXXXX........
+  0x000E00, // Row 12: .........XXX.........
+  0x000400  // Row 13: ..........X..........
+};
 
+const char* text[14] = {
+  "                                                                      ",
+  "                                                                      ",
+  "                                                                      ",
+  " ###########                      ###                                 ",
+  "     ###                          ###    ##                           ",
+  "     ###        ###      #####  #######     ### ###    #####          ",
+  "     ###      ##   ###  ###       ###   ###  ###  ### ###  ###        ",
+  "     ###     #########    ####    ###   ###  ###  ### ##   ###        ",
+  "     ###     ##             ###   ### # ###  ###  ### #### ###        ",
+  "     ###       #####    ######     ###  ### ####  ###     ###  ##  ## ",
+  "                                                        ####          ",
+  "                                                                      ",
+  "                                                                      ",
+  "                                                                      ",
+};
+
+// --- TM1629A Pin Definitions ---
+#define TM_DIO_PIN PB4 // Data I/O
+#define TM_CLK_PIN PB3 // Clock
+#define TM_STB_PIN PB5 // Strobe / Chip Select
+
+// --- SM1626D Pin Mapping ---
+#define CLK_PIN   PB12 // Shift Clock
+#define OE_PIN    PB13 // Output Enable (Usually Active LOW)
+#define STB_PIN   PB14 // Strobe / Latch
+#define DIN_MAIN  PB15 // Main Screen Data In
+#define DIN_SUB   PA13 // Small Screen Data In
+
+MatrixDriver mainScreen(CLK_PIN, OE_PIN, STB_PIN, DIN_MAIN, 70, 14);
+MatrixDriver subScreen(CLK_PIN, OE_PIN, STB_PIN, DIN_SUB, 21, 14);
+
+// Map Serial1 to PA9/PA10 explicitly
 HardwareSerial Serial1(PA10, PA9);
 
-// --- Software I2C Core ---
-void pullLow(uint8_t pin) { pinMode(pin, OUTPUT); digitalWrite(pin, LOW); }
-void releaseHigh(uint8_t pin) { pinMode(pin, INPUT); }
+void drawHeartToSubScreen() {
+  subScreen.clear();
 
-void i2cStart() {
-  releaseHigh(SDA_PIN); releaseHigh(SCL_PIN); delayMicroseconds(5);
-  pullLow(SDA_PIN); delayMicroseconds(5);
-  pullLow(SCL_PIN); delayMicroseconds(5);
-}
+  // Loop through all 14 rows
+  for (int y = 0; y < 14; y++) {
+    // Loop through the 21 columns
+    for (int x = 0; x < 21; x++) {
 
-void i2cStop() {
-  pullLow(SDA_PIN); delayMicroseconds(5);
-  releaseHigh(SCL_PIN); delayMicroseconds(5);
-  releaseHigh(SDA_PIN); delayMicroseconds(5);
-}
-
-bool i2cWrite(uint8_t data) {
-  for (int i = 0; i < 8; i++) {
-    if (data & 0x80) releaseHigh(SDA_PIN); else pullLow(SDA_PIN);
-    data <<= 1; delayMicroseconds(5);
-    releaseHigh(SCL_PIN); delayMicroseconds(5); pullLow(SCL_PIN);
+      // If the specific bit at position 'x' is a 1, draw the pixel
+      if (heart_21x14[y] & (1UL << x)) {
+        subScreen.drawPixel(x, y, 1);
+      }
+    }
   }
-  releaseHigh(SDA_PIN); delayMicroseconds(5); releaseHigh(SCL_PIN); delayMicroseconds(5);
-  bool ack = !digitalRead(SDA_PIN);
-  pullLow(SCL_PIN);
-  return ack;
 }
 
-// Read one byte. Send ACK if we want more bytes, send NACK if we are done.
-uint8_t i2cRead(bool sendAck) {
-  uint8_t data = 0;
-  releaseHigh(SDA_PIN);
-  for (int i = 0; i < 8; i++) {
-    data <<= 1; delayMicroseconds(5);
-    releaseHigh(SCL_PIN); delayMicroseconds(5);
-    if (digitalRead(SDA_PIN)) data |= 1;
-    pullLow(SCL_PIN);
+void drawToMainScreen() {
+  mainScreen.clear();
+
+  for (int y = 0; y < 14; y++) {
+    for (int x = 0; x < 70; x++) {
+
+      // If the character is NOT a space, turn the LED ON
+      if (text[y][x] != ' ') {
+        mainScreen.drawPixel(x, y, 1);
+      }
+
+    }
   }
-  if (sendAck) pullLow(SDA_PIN); else releaseHigh(SDA_PIN);
-  delayMicroseconds(5); releaseHigh(SCL_PIN); delayMicroseconds(5);
-  pullLow(SCL_PIN); releaseHigh(SDA_PIN);
-  return data;
-}
-
-// --- DS3231 Logic ---
-
-// Convert Binary Coded Decimal to normal Decimal
-uint8_t bcdToDec(uint8_t val) {
-  return ((val / 16 * 10) + (val % 16));
-}
-
-void readDS3231() {
-  // 1. Tell the DS3231 we want to start reading at Register 0x00 (Seconds)
-  i2cStart();
-  i2cWrite(0x68 << 1); // Write mode
-  i2cWrite(0x00);      // Register pointer to 0x00
-  i2cStop();
-
-  // 2. Read 7 bytes of time data
-  i2cStart();
-  i2cWrite((0x68 << 1) | 1); // Read mode
-
-  uint8_t seconds = bcdToDec(i2cRead(true) & 0x7F);
-  uint8_t minutes = bcdToDec(i2cRead(true));
-  uint8_t hours   = bcdToDec(i2cRead(true) & 0x3F); // Assuming 24hr mode
-  uint8_t dayOfWeek = bcdToDec(i2cRead(true));
-  uint8_t day     = bcdToDec(i2cRead(true));
-  uint8_t month   = bcdToDec(i2cRead(true) & 0x7F);
-  uint8_t year    = bcdToDec(i2cRead(false)); // NACK the last byte to stop
-  i2cStop();
-
-  // 3. Read the Temperature Registers (0x11 and 0x12)
-  i2cStart();
-  i2cWrite(0x68 << 1);
-  i2cWrite(0x11); // Register pointer to 0x11
-  i2cStop();
-
-  i2cStart();
-  i2cWrite((0x68 << 1) | 1);
-  int8_t tempMSB = i2cRead(true);     // Integer part
-  uint8_t tempLSB = i2cRead(false);   // Fractional part (top 2 bits)
-  i2cStop();
-
-  float temperature = tempMSB + ((tempLSB >> 6) * 0.25f);
-
-  // --- Print the Results ---
-  char buffer[50];
-  sprintf(buffer, "20%02d-%02d-%02d %02d:%02d:%02d", year, month, day, hours, minutes, seconds);
-  Serial1.print("RTC Time: ");
-  Serial1.print(buffer);
-
-  Serial1.print(" | Temp: ");
-  Serial1.print(temperature);
-  Serial1.println(" C");
 }
 
 void setup() {
-  Serial1.begin(115200);
-  delay(1000);
-  Serial1.println("\n=== HAZK-03 DS3231 READER ===");
+    Serial1.begin(115200);
+    delay(1000);
+    Serial1.println("\n=== TM1629A INIT ===");
+    tm_setup(1, {TM_STB_PIN, TM_CLK_PIN, TM_DIO_PIN});
+
+    Serial1.println("\n=== Screens INIT ===");
+    // Initialize the display hardware
+    mainScreen.begin();
+    subScreen.begin();
+
+    drawHeartToSubScreen();
+    drawToMainScreen();
+
+    Serial1.println("Setup complete.");
 }
 
+int i;
+
 void loop() {
-  readDS3231();
-  delay(1000); // Read every second
+    if (i++ % 50 == 0) {
+
+        DateTime dt;
+        readDS3231(&dt); // Read the current time and temperature from the DS3231 RTC
+
+        Serial1.print("Time: ");
+        Serial1.print(dt.hours);
+        Serial1.print(":");
+        Serial1.print(dt.minutes);
+        Serial1.print(":");
+        Serial1.print(dt.seconds);
+
+        Serial1.print("\tTemperature: ");
+        Serial1.print(dt.temperature / 10.0);
+        Serial1.println("°C");
+
+        tm_setDigitChar(0, ((dt.hours / 10) ? (dt.hours / 10) : ' ')); // Leading space for single-digit hours
+        tm_setDigitChar(1, (dt.hours % 10));
+        tm_setDigitChar(2, (dt.minutes / 10));
+        tm_setDigitChar(3, (dt.minutes % 10));
+        tm_setDigitChar(4, (dt.seconds / 10));
+        tm_setDigitChar(5, (dt.seconds % 10));
+        tm_setDigitChar(6, ((dt.month / 10) ? (dt.month / 10) : ' ')); // Leading space for single-digit months
+        tm_setDigitChar(7, (dt.month % 10));
+        tm_setDigitChar(8, ((dt.day / 10) ? (dt.day / 10) : ' ')); // Leading space for single-digit days
+        tm_setDigitChar(9, (dt.day % 10));
+        tm_setDigitChar(10, ((dt.temperature/10) / 10));
+        tm_setDigitChar(11, ((dt.temperature/10) % 10));
+        tm_updateDisplay();
+    }
+
+    mainScreen.refreshFrame();
+    subScreen.refreshFrame();
 }
+

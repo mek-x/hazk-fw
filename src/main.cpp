@@ -1,91 +1,113 @@
 #include <Arduino.h>
 
-// --- Mystery Pins ---
-#define PIN_1 PC6
-#define PIN_2 PC7
+#define SCL_PIN PC6
+#define SDA_PIN PC7
 
 HardwareSerial Serial1(PA10, PA9);
 
-// --- Software I2C Helpers ---
-// We use "Open-Drain" logic. The RTC module has physical pull-up resistors on the board.
-// To send a 0, we pull the pin to Ground. To send a 1, we let go and let the resistor pull it High.
-void pullLow(uint8_t pin) {
-  pinMode(pin, OUTPUT);
-  digitalWrite(pin, LOW);
+// --- Software I2C Core ---
+void pullLow(uint8_t pin) { pinMode(pin, OUTPUT); digitalWrite(pin, LOW); }
+void releaseHigh(uint8_t pin) { pinMode(pin, INPUT); }
+
+void i2cStart() {
+  releaseHigh(SDA_PIN); releaseHigh(SCL_PIN); delayMicroseconds(5);
+  pullLow(SDA_PIN); delayMicroseconds(5);
+  pullLow(SCL_PIN); delayMicroseconds(5);
 }
 
-void releaseHigh(uint8_t pin) {
-  pinMode(pin, INPUT); // High impedance (let external resistor pull it HIGH)
+void i2cStop() {
+  pullLow(SDA_PIN); delayMicroseconds(5);
+  releaseHigh(SCL_PIN); delayMicroseconds(5);
+  releaseHigh(SDA_PIN); delayMicroseconds(5);
 }
 
-void i2cStart(uint8_t sda, uint8_t scl) {
-  releaseHigh(sda); releaseHigh(scl); delayMicroseconds(5);
-  pullLow(sda); delayMicroseconds(5);
-  pullLow(scl); delayMicroseconds(5);
-}
-
-void i2cStop(uint8_t sda, uint8_t scl) {
-  pullLow(sda); delayMicroseconds(5);
-  releaseHigh(scl); delayMicroseconds(5);
-  releaseHigh(sda); delayMicroseconds(5);
-}
-
-// Writes one byte and checks if the device responds (ACKs)
-bool i2cWrite(uint8_t sda, uint8_t scl, uint8_t data) {
+bool i2cWrite(uint8_t data) {
   for (int i = 0; i < 8; i++) {
-    if (data & 0x80) releaseHigh(sda);
-    else pullLow(sda);
-    data <<= 1;
-    delayMicroseconds(5);
-    releaseHigh(scl); // Clock High
-    delayMicroseconds(5);
-    pullLow(scl);     // Clock Low
+    if (data & 0x80) releaseHigh(SDA_PIN); else pullLow(SDA_PIN);
+    data <<= 1; delayMicroseconds(5);
+    releaseHigh(SCL_PIN); delayMicroseconds(5); pullLow(SCL_PIN);
   }
-
-  // Read the Acknowledge (ACK) bit from the device
-  releaseHigh(sda);
-  delayMicroseconds(5);
-  releaseHigh(scl);
-  delayMicroseconds(5);
-  bool ack = !digitalRead(sda); // 0 means the device successfully pulled it LOW
-  pullLow(scl);
-
+  releaseHigh(SDA_PIN); delayMicroseconds(5); releaseHigh(SCL_PIN); delayMicroseconds(5);
+  bool ack = !digitalRead(SDA_PIN);
+  pullLow(SCL_PIN);
   return ack;
 }
 
-void scanBus(uint8_t scl, uint8_t sda, const char* label) {
-  Serial1.print("Testing: ");
-  Serial1.println(label);
-
-  int devicesFound = 0;
-  for (uint8_t addr = 1; addr < 127; addr++) {
-    i2cStart(sda, scl);
-    bool ack = i2cWrite(sda, scl, addr << 1); // Shift address left by 1 for Write command
-    i2cStop(sda, scl);
-
-    if (ack) {
-      Serial1.print(" -> Success! Found device at 0x");
-      Serial1.println(addr, HEX);
-      devicesFound++;
-    }
+// Read one byte. Send ACK if we want more bytes, send NACK if we are done.
+uint8_t i2cRead(bool sendAck) {
+  uint8_t data = 0;
+  releaseHigh(SDA_PIN);
+  for (int i = 0; i < 8; i++) {
+    data <<= 1; delayMicroseconds(5);
+    releaseHigh(SCL_PIN); delayMicroseconds(5);
+    if (digitalRead(SDA_PIN)) data |= 1;
+    pullLow(SCL_PIN);
   }
+  if (sendAck) pullLow(SDA_PIN); else releaseHigh(SDA_PIN);
+  delayMicroseconds(5); releaseHigh(SCL_PIN); delayMicroseconds(5);
+  pullLow(SCL_PIN); releaseHigh(SDA_PIN);
+  return data;
+}
 
-  if (devicesFound == 0) Serial1.println(" -> No response.");
-  Serial1.println();
+// --- DS3231 Logic ---
+
+// Convert Binary Coded Decimal to normal Decimal
+uint8_t bcdToDec(uint8_t val) {
+  return ((val / 16 * 10) + (val % 16));
+}
+
+void readDS3231() {
+  // 1. Tell the DS3231 we want to start reading at Register 0x00 (Seconds)
+  i2cStart();
+  i2cWrite(0x68 << 1); // Write mode
+  i2cWrite(0x00);      // Register pointer to 0x00
+  i2cStop();
+
+  // 2. Read 7 bytes of time data
+  i2cStart();
+  i2cWrite((0x68 << 1) | 1); // Read mode
+
+  uint8_t seconds = bcdToDec(i2cRead(true) & 0x7F);
+  uint8_t minutes = bcdToDec(i2cRead(true));
+  uint8_t hours   = bcdToDec(i2cRead(true) & 0x3F); // Assuming 24hr mode
+  uint8_t dayOfWeek = bcdToDec(i2cRead(true));
+  uint8_t day     = bcdToDec(i2cRead(true));
+  uint8_t month   = bcdToDec(i2cRead(true) & 0x7F);
+  uint8_t year    = bcdToDec(i2cRead(false)); // NACK the last byte to stop
+  i2cStop();
+
+  // 3. Read the Temperature Registers (0x11 and 0x12)
+  i2cStart();
+  i2cWrite(0x68 << 1);
+  i2cWrite(0x11); // Register pointer to 0x11
+  i2cStop();
+
+  i2cStart();
+  i2cWrite((0x68 << 1) | 1);
+  int8_t tempMSB = i2cRead(true);     // Integer part
+  uint8_t tempLSB = i2cRead(false);   // Fractional part (top 2 bits)
+  i2cStop();
+
+  float temperature = tempMSB + ((tempLSB >> 6) * 0.25f);
+
+  // --- Print the Results ---
+  char buffer[50];
+  sprintf(buffer, "20%02d-%02d-%02d %02d:%02d:%02d", year, month, day, hours, minutes, seconds);
+  Serial1.print("RTC Time: ");
+  Serial1.print(buffer);
+
+  Serial1.print(" | Temp: ");
+  Serial1.print(temperature);
+  Serial1.println(" C");
 }
 
 void setup() {
   Serial1.begin(115200);
-  delay(2000);
-  Serial1.println("\n=== HAZK-03 MYSTERY I2C SCANNER ===");
+  delay(1000);
+  Serial1.println("\n=== HAZK-03 DS3231 READER ===");
 }
 
 void loop() {
-  // Try Configuration A
-  scanBus(PC6, PC7, "SCL = PC6, SDA = PC7");
-  delay(1000);
-
-  // Try Configuration B
-  scanBus(PC7, PC6, "SCL = PC7, SDA = PC6");
-  delay(3000);
+  readDS3231();
+  delay(1000); // Read every second
 }
